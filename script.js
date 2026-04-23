@@ -17,66 +17,75 @@ async function checkIP(ipParam) {
   loader.classList.remove("hidden");
   resultDiv.style.display = "none";
 
-  const API_KEY = "YOUR_ABUSEIPDB_API_KEY";
-
   try {
-    const [abuseRes, locRes] = await Promise.all([
-      fetch(`https://api.abuseipdb.com/api/v2/check?ipAddress=${ip}&maxAgeInDays=90`, {
-        headers: { Key: API_KEY, Accept: "application/json" }
-      }),
-      fetch(`http://ip-api.com/json/${ip}`)
-    ]);
+    // ✅ FIXED FREE HTTPS API (NO BLOCKING)
+    const res = await fetch(`https://ipwho.is/${ip}`);
+    const data = await res.json();
 
-    const abuseData = await abuseRes.json();
-    const locData = await locRes.json();
+    if (!data.success) {
+      throw new Error("Invalid IP");
+    }
 
-    const score = abuseData.data.abuseConfidenceScore;
+    const lat = data.latitude;
+    const lon = data.longitude;
+    const isp = data.connection?.isp || "Unknown";
 
+    // 🔥 SIMPLE RISK ENGINE (your feature stays)
     let riskClass = "low";
     let riskText = "Low Risk";
 
-    if (score > 70) { riskClass = "high"; riskText = "High Risk"; }
-    else if (score > 30) { riskClass = "medium"; riskText = "Medium Risk"; }
+    if (data.security?.proxy || data.security?.vpn) {
+      riskClass = "high";
+      riskText = "High Risk (VPN/Proxy detected)";
+    } else if (isp.toLowerCase().includes("cloud")) {
+      riskClass = "medium";
+      riskText = "Medium Risk (Cloud provider)";
+    }
 
     resultDiv.innerHTML = `
       <h3>${ip}</h3>
-      <p><b>Location:</b> ${locData.city}, ${locData.country}</p>
-      <p><b>ISP:</b> ${abuseData.data.isp}</p>
-      <p><b>Reports:</b> ${abuseData.data.totalReports}</p>
-      <p><b>Score:</b> ${score}</p>
+      <p><b>Location:</b> ${data.city}, ${data.country}</p>
+      <p><b>ISP:</b> ${isp}</p>
       <p class="${riskClass}"><b>${riskText}</b></p>
     `;
 
     resultDiv.style.display = "block";
     loader.classList.add("hidden");
 
-    // MAP
+    // 🌍 MAP (FIXED)
     if (!map) {
-      map = L.map('map').setView([locData.lat, locData.lon], 6);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+      map = L.map('map').setView([lat, lon], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: "© OpenStreetMap"
+      }).addTo(map);
     } else {
-      map.setView([locData.lat, locData.lon], 6);
+      map.setView([lat, lon], 6);
     }
 
     if (marker) marker.remove();
-    marker = L.marker([locData.lat, locData.lon]).addTo(map);
+    marker = L.marker([lat, lon]).addTo(map)
+      .bindPopup(`${ip}<br>${data.city}, ${data.country}`)
+      .openPopup();
 
     saveHistory(ip);
 
   } catch (err) {
     loader.classList.add("hidden");
-    alert("Error fetching data");
+    console.error(err);
+    alert("Error fetching data (API failed or invalid IP)");
   }
 }
 
-// HISTORY
+// 📜 HISTORY (UNCHANGED BUT CLEAN)
 function saveHistory(ip) {
   let history = JSON.parse(localStorage.getItem("ipHistory")) || [];
+
   if (!history.includes(ip)) {
     history.unshift(ip);
     history = history.slice(0, 5);
     localStorage.setItem("ipHistory", JSON.stringify(history));
   }
+
   displayHistory();
 }
 
